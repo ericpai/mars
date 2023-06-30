@@ -96,12 +96,12 @@ def test_bool_eval_to_query(setup):
     raw = pd.DataFrame(np.random.rand(100, 10), columns=list("ABCDEFGHIJ"))
 
     # does not support non-eval inputs
-    # df1 = md.DataFrame(raw, chunk_size=10)
-    # df2 = df1[(df1["A"] * 5).astype(bool)]
-    # graph = TileableGraph([df2.data])
-    # next(TileableGraphBuilder(graph).build())
-    # records = optimize(graph)
-    # assert records.get_optimization_result(df2.data) is None
+    df1 = md.DataFrame(raw, chunk_size=10)
+    df2 = df1[(df1["A"] * 5).astype(bool)]
+    graph = TileableGraph([df2.data])
+    next(TileableGraphBuilder(graph).build())
+    records = optimize(graph)
+    assert records.get_optimization_result(df2.data) is None
 
     df1 = md.DataFrame(raw, chunk_size=10)
     df2 = df1[(df1["A"] > 0.5) & (df1["C"] < 0.5)]

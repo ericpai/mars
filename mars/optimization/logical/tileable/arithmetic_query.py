@@ -76,10 +76,14 @@ class _EvalRewriteOptimizationRule(OperandBasedOptimizationRule):
         optimizer_cls: Type["Optimizer"],
     ):
         super().__init__(graph, records, optimizer_cls)
-        self._marked_nodes = set()
+        self._marked_predecessors = dict()
 
-    def _mark_node(self, node: EntityType):
-        self._marked_nodes.add(self._records.get_optimization_result(node, node))
+    def _mark_predecessors(self, node: EntityType, predecessor: EntityType):
+        pred_original = self._records.get_original_entity(predecessor, predecessor)
+        if predecessor not in self._marked_predecessors:
+            self._marked_predecessors[pred_original] = {node}
+        else:
+            self._marked_predecessors[pred_original].add(node)
 
     def _find_nodes_to_remove(self, node: EntityType) -> Set[EntityType]:
         node = self._records.get_optimization_result(node) or node
@@ -93,10 +97,11 @@ class _EvalRewriteOptimizationRule(OperandBasedOptimizationRule):
             if pred_opt in results_set or pred_original in results_set:
                 continue
 
-            if all(
-                self._records.get_optimization_result(s, s) in self._marked_nodes
-                for s in self._graph.iter_successors(pred)
-            ):
+            affect_succ = self._marked_predecessors.get(pred_original) or []
+            affect_succ_opt = [
+                self._records.get_optimization_result(s, s) for s in affect_succ
+            ]
+            if all(s in affect_succ_opt for s in self._graph.iter_successors(pred)):
                 removed_pairs.append((pred_original, pred_opt))
 
         for pred_original, pred_opt in removed_pairs:
@@ -111,7 +116,7 @@ class _EvalRewriteOptimizationRule(OperandBasedOptimizationRule):
         subgraph = TileableGraph()
         subgraph.add_node(new_node)
         # Mark itself
-        self._mark_node(original_node)
+        # self._mark_node(original_node)
         # Find all the nodes to remove
         nodes_to_remove = self._find_nodes_to_remove(original_node)
 
@@ -125,7 +130,7 @@ class _EvalRewriteOptimizationRule(OperandBasedOptimizationRule):
         )
         self._records.append_record(
             OptimizationRecord(
-                original_node,
+                self._records.get_original_entity(original_node, original_node),
                 new_node,
                 OptimizationRecordType.replace,
             )
@@ -225,7 +230,7 @@ class SeriesArithmeticToEval(_EvalRewriteOptimizationRule):
         if in_tileable is None:
             return EvalExtractRecord()
 
-        self._mark_node(op.inputs[0])
+        self._mark_predecessors(tileable, op.inputs[0])
         return EvalExtractRecord(
             in_tileable, _func_name_to_builder[func_name](expr), variables
         )
@@ -238,10 +243,10 @@ class SeriesArithmeticToEval(_EvalRewriteOptimizationRule):
 
         lhs_tileable, lhs_expr, lhs_vars = self._extract_eval_expression(op.lhs)
         if lhs_tileable is not None:
-            self._mark_node(op.lhs)
+            self._mark_predecessors(tileable, op.lhs)
         rhs_tileable, rhs_expr, rhs_vars = self._extract_eval_expression(op.rhs)
         if rhs_tileable is not None:
-            self._mark_node(op.rhs)
+            self._mark_predecessors(tileable, op.rhs)
 
         if lhs_expr is None or rhs_expr is None:
             return EvalExtractRecord()
@@ -318,7 +323,7 @@ class _DataFrameEvalRewriteRule(_EvalRewriteOptimizationRule):
         new_node = new_op.new_tileable(
             [opt_in_tileable], _key=node.key, _id=node.id, **node.params
         ).data
-        self._mark_node(in_columnar_node)
+        self._mark_predecessors(node, in_columnar_node)
         self._replace_with_new_node(node, new_node)
 
 
@@ -408,5 +413,5 @@ class DataFrameEvalSetItemToEval(_DataFrameEvalRewriteRule):
             new_node = new_op.new_tileable(
                 pred_opt_node.inputs, _key=node.key, _id=node.id, **node.params
             ).data
-            self._mark_node(pred_opt_node)
+            self._mark_predecessors(opt_node, pred_opt_node)
             self._replace_with_new_node(opt_node, new_node)
