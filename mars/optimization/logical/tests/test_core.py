@@ -233,3 +233,15 @@ def test_replace_subgraph_without_removing_nodes():
         assert g1.count_successors(pred_node) == len(successors)
         for successor in successors:
             assert g1.has_successor(pred_node, key_to_node[successor.key])
+
+
+def test_debug():
+    from mars.optimization.logical.tileable.core import TileableOptimizer
+    import mars.tensor as mt
+    import mars.dataframe as md
+
+    v = mt.random.rand(1000, 2)
+    df1 = md.DataFrame(v, columns=list("AB"))
+    df2 = df1["A"] + df1["B"]
+    g = df2.build_graph()
+    TileableOptimizer.optimize(g)
